@@ -1,4 +1,3 @@
-
 # VeriNews
 
 VeriNews is a Streamlit-based fake news detection app powered by a fine-tuned RoBERTa model.  
