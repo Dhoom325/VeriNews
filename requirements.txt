@@ -67,7 +67,7 @@ rich==14.3.2
 rpds-py==0.30.0
 safetensors==0.7.0
 scikit-learn==1.7.2
-scipy==1.15.3
+scipy
 sgmllib3k==1.0.0
 shellingham==1.5.4
 six==1.17.0
@@ -79,12 +79,12 @@ tenacity==9.1.4
 threadpoolctl==3.6.0
 tokenizers==0.22.2
 toml==0.10.2
-torch==2.5.1
+torch
 torchaudio==2.5.1
 torchvision==0.20.1 #+cu121 for CUDA 12.1, change to +cpu for CPU-only
 tornado==6.5.4
 tqdm==4.67.3
-transformers==5.1.0
+transformers
 typer==0.23.0
 typer-slim==0.23.0
 typing-inspection==0.4.2

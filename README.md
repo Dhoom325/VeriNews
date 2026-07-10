@@ -55,11 +55,36 @@ HF_TOKEN = "your_huggingface_token_here"
 
 Get your token from https://huggingface.co/settings/tokens
 
+You can also provide `HF_TOKEN`, `GROQ_API_KEY`, and `NEWS_API_KEY` as environment variables if you prefer not to use `secrets.toml`.
+
 ### 5. Run the app
 
 ```bash
-streamlit run app.py
+bash run.sh
 ```
+
+If you prefer to run it directly without the helper script, use:
+
+```bash
+./roberta-env/bin/python -m streamlit run app.py
+```
+
+## Deploy To Streamlit Community Cloud
+
+1. Push this repository to GitHub.
+2. Open Streamlit Community Cloud and create a new app from the repo.
+3. Set the app entrypoint to `app.py`.
+4. Add these secrets in the Streamlit Cloud secrets manager:
+
+```toml
+HF_TOKEN = "your_huggingface_token_here"
+GROQ_API_KEY = "your_groq_api_key_here"
+NEWS_API_KEY = "your_newsapi_key_here"
+```
+
+5. Deploy the app.
+
+For local development, you can copy [.streamlit/secrets.toml.example](.streamlit/secrets.toml.example) to `.streamlit/secrets.toml` and fill in your values.
 
 ## Notes
 

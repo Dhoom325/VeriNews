@@ -1,3 +1,7 @@
+import os
+from pathlib import Path
+import tomllib
+
 import streamlit as st
 import torch
 import requests
@@ -7,7 +11,13 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from huggingface_hub import login
 from groq import Groq
  
-login(token=st.secrets["HF_TOKEN"])
+try:
+    hf_token = st.secrets.get("HF_TOKEN")
+except Exception:
+    hf_token = None
+
+if hf_token:
+    login(token=hf_token)
  
 # Config
  
@@ -29,6 +39,26 @@ SUSPICIOUS_PHRASES = [
 SAFE_ABBREVIATIONS = ["WHO", "CDC", "UN", "EU", "IMF", "NASA"]
  
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def get_secret(key):
+    try:
+        return st.secrets[key]
+    except Exception:
+        env_value = os.getenv(key)
+        if env_value:
+            return env_value
+
+        secrets_path = Path(__file__).resolve().parent / ".streamlit" / "secrets.toml"
+        if secrets_path.exists():
+            try:
+                with secrets_path.open("rb") as file_handle:
+                    secrets_data = tomllib.load(file_handle)
+                return secrets_data.get(key)
+            except Exception:
+                return None
+
+        return None
  
  
 # Load model
@@ -116,7 +146,11 @@ def build_fake_reasons(title, article, signals, confidence):
  
 def llm_verify(title, article, model_prediction, confidence):
     try:
-        client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+        groq_api_key = get_secret("GROQ_API_KEY")
+        if not groq_api_key:
+            return "LLM verification unavailable: GROQ_API_KEY is not configured"
+
+        client = Groq(api_key=groq_api_key)
  
         label = "REAL" if model_prediction == 1 else "FAKE"
         text_snippet = (title + " " + article)[:1000]
@@ -144,18 +178,32 @@ Reason: [1-2 sentence explanation]"""
 # NewsAPI
  
 def get_newsapi_key():
-    try:
-        return st.secrets["NEWS_API_KEY"]
-    except:
-        return None
+    return get_secret("NEWS_API_KEY")
+
+
+def build_search_query(title, article):
+    title = (title or "").strip()
+    article_keywords = extract_keywords(article or "")
+
+    query_parts = []
+    if title:
+        query_parts.append(title)
+    if article_keywords:
+        query_parts.append(" ".join(article_keywords[:5]))
+    elif article:
+        query_parts.append(" ".join((article or "").split()[:20]))
+
+    query = " ".join(query_parts).strip()
+    return query or title or article or ""
  
  
-def fetch_newsapi(title, api_key, top_k=3):
+def fetch_newsapi(title, article, api_key, top_k=3):
     if not api_key:
         return []
     url = "https://newsapi.org/v2/everything"
+    query = build_search_query(title, article)
     params = {
-        "q": title,
+        "q": query,
         "language": "en",
         "sortBy": "relevancy",
         "pageSize": top_k,
@@ -178,8 +226,8 @@ def fetch_newsapi(title, api_key, top_k=3):
  
 # Google RSS
  
-def fetch_google_news_rss(title, top_k=3):
-    query = title.replace(" ", "+")
+def fetch_google_news_rss(title, article, top_k=3):
+    query = build_search_query(title, article).replace(" ", "+")
     url = f"https://news.google.com/rss/search?q={query}"
     feed = feedparser.parse(url)
     articles = []
@@ -213,10 +261,10 @@ def tfidf_fallback_search(title, article, top_k=3):
  
 def fetch_verified_news(title, article):
     api_key = get_newsapi_key()
-    articles = fetch_newsapi(title, api_key)
+    articles = fetch_newsapi(title, article, api_key)
     if articles:
         return articles, "api"
-    articles = fetch_google_news_rss(title)
+    articles = fetch_google_news_rss(title, article)
     if articles:
         return articles, "rss"
     articles = tfidf_fallback_search(title, article)
@@ -233,7 +281,7 @@ def ai_agent_pipeline(title, article, prediction, confidence):
     fake_reasons = []
     if prediction == 0:
         fake_reasons = build_fake_reasons(title, article, signals, confidence)
-    primary = articles[0] if source_type in ["api", "rss"] else None
+    primary = articles[0] if articles else None
     return {
         "signals": signals,
         "fake_reasons": fake_reasons,
@@ -289,6 +337,7 @@ if st.button("Predict"):
         # Groq LLM second opinion
         st.markdown("---")
         st.subheader("LLM Verification (Groq | Llama 3)")
+        st.caption("This section gives a second opinion from a language model. It is meant to explain the article's tone, claims, and wording, not replace the classifier or a human fact-check.")
  
         with st.spinner("Getting second opinion from LLM..."):
             llm_result = llm_verify(title, article, pred, confidence)
@@ -319,24 +368,29 @@ if st.button("Predict"):
         if pred == 0:
             st.warning("This article shows patterns sometimes associated with misleading news.")
             st.subheader("Why it was flagged")
+            st.caption("These are the signals that helped the model decide the article may be unreliable.")
             for reason in result["fake_reasons"]:
                 st.write("•", reason)
             st.markdown("---")
             st.subheader("Related news coverage")
+            st.caption("These links are there to help you compare the story with reporting from other sources.")
  
         # REAL
         else:
             if result["primary"]:
                 st.success("This article appears consistent with reporting from established news sources.")
                 st.subheader("Primary Source")
+                st.caption("This is the closest matching article found in the news search, used as a reference point.")
                 st.markdown(f"[{result['primary']['title']}]({result['primary']['url']})")
                 st.caption(f"Source: {result['primary']['source']}")
                 st.markdown("---")
                 st.subheader("Related verified coverage")
+                st.caption("These are additional articles that appear related to the same topic or event.")
             else:
                 st.warning("This article shows patterns sometimes associated with misleading news.")
                 st.info("The story may be very recent or not indexed by the news APIs yet. Related articles are shown below.")
                 st.subheader("Related news coverage")
+                st.caption("These results are meant to show whether similar reporting exists elsewhere online.")
  
         if not result["articles"]:
             st.info("No related news articles found.")
